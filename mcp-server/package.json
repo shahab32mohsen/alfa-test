@@ -6,7 +6,9 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "start:http": "node dist/http-server.js",
+    "dev:http": "tsc --watch & node dist/http-server.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
@@ -15,9 +17,13 @@
     "@siteimprove/alfa-earl": "workspace:^",
     "@siteimprove/alfa-json": "workspace:^",
     "@siteimprove/alfa-rules": "workspace:^",
-    "@siteimprove/alfa-web": "workspace:^"
+    "@siteimprove/alfa-web": "workspace:^",
+    "cors": "^2.8.5",
+    "express": "^5.2.1"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
     "@types/node": "^24.10.1",
     "typescript": "^5.9.3"
   }
