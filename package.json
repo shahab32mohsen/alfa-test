@@ -30,7 +30,8 @@
   },
   "type": "module",
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "mcp-server"
   ],
   "devDependencies": {
     "@changesets/cli": "^2.29.8",

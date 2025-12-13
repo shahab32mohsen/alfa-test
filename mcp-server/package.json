@@ -1,0 +1,24 @@
+{
+  "name": "@siteimprove/alfa-mcp-server",
+  "version": "0.1.0",
+  "description": "MCP server for Alfa accessibility testing",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "@siteimprove/alfa-act": "workspace:^",
+    "@siteimprove/alfa-dom": "workspace:^",
+    "@siteimprove/alfa-earl": "workspace:^",
+    "@siteimprove/alfa-json": "workspace:^",
+    "@siteimprove/alfa-rules": "workspace:^",
+    "@siteimprove/alfa-web": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3"
+  }
+}
