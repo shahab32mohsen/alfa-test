@@ -22,9 +22,11 @@ import rules, { Rules } from "@siteimprove/alfa-rules";
 import { Page } from "@siteimprove/alfa-web";
 import { Device } from "@siteimprove/alfa-device";
 import { Request, Response } from "@siteimprove/alfa-http";
-import { Document } from "@siteimprove/alfa-dom";
+import { Document, Node } from "@siteimprove/alfa-dom";
+import { Native } from "@siteimprove/alfa-dom/native";
 import { URL } from "@siteimprove/alfa-url";
 import { Sequence } from "@siteimprove/alfa-sequence";
+import { JSDOM } from "jsdom";
 
 // Note: For full functionality, you'll need @siteimprove/alfa-scraper
 // which is in the alfa-integrations repository. This example shows
@@ -145,17 +147,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           url?: string;
         };
 
-        // Note: For proper HTML parsing, you would typically use:
-        // 1. @siteimprove/alfa-scraper (for live URLs)
-        // 2. jsdom or similar DOM parser (for HTML strings)
-        // 
-        // For this example, we'll create a minimal document structure.
-        // In production, consider using jsdom to parse HTML:
-        //   const { JSDOM } = require("jsdom");
-        //   const dom = new JSDOM(html);
-        //   const documentJson = await Native.fromNode(dom.window.document);
-        //   const document = Document.from(documentJson, device).getUnsafe();
-
         const pageUrlResult = URL.parse(url);
         if (pageUrlResult.isErr()) {
           return {
@@ -171,49 +162,87 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           };
         }
         const pageUrl = pageUrlResult.getUnsafe();
-
-        // Create a minimal Page object with an empty document
-        // This is a simplified example - for real HTML parsing, use jsdom + Native.fromNode
-        const request = Request.of("GET", pageUrl);
-        const response = Response.empty();
         const device = Device.standard();
-        const document = Document.empty(); // Simplified - use proper HTML parsing in production
 
-        const page = Page.of(request, response, document, device);
+        try {
+          // Parse HTML with jsdom
+          const dom = new JSDOM(html, { url });
 
-        // Run the audit
-        const outcomes = await Audit.of(page, rules).evaluate();
-        const outcomesArray = Array.from(outcomes);
+          // Set globalThis.document for Native.fromNode (it uses globalThis.document.createRange())
+          // This is required because Native.fromNode expects globalThis.document to exist
+          const originalDocument = globalThis.document;
+          globalThis.document = dom.window.document;
 
-        // Convert outcomes to JSON
-        const outcomesJson = outcomesArray.map((outcome) => outcome.toJSON());
+          let document: Document;
+          try {
+            // Convert DOM to Alfa format
+            const documentJson = await Native.fromNode(dom.window.document);
+            
+            // Remove the logs property if present (Native.fromNode returns Node.JSON & Logs)
+            const { logs, ...documentJsonWithoutLogs } = documentJson as any;
+            
+            // Create Document from JSON
+            document = Node.from(documentJsonWithoutLogs as Document.JSON, device);
+          } finally {
+            // Restore original document (or undefined if it didn't exist)
+            if (originalDocument !== undefined) {
+              globalThis.document = originalDocument;
+            } else {
+              delete (globalThis as any).document;
+            }
+          }
 
-        // Count outcomes by type
-        const counts = {
-          passed: outcomesArray.filter(Outcome.isPassed).length,
-          failed: outcomesArray.filter(Outcome.isFailed).length,
-          cantTell: outcomesArray.filter(Outcome.isCantTell).length,
-          inapplicable: outcomesArray.filter(Outcome.isInapplicable).length,
-        };
+          const request = Request.of("GET", pageUrl);
+          const response = Response.of(pageUrl, 200);
 
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  summary: {
-                    total: outcomesArray.length,
-                    counts,
+          const page = Page.of(request, response, document, device);
+
+          // Run the audit
+          const outcomes = await Audit.of(page, rules).evaluate();
+          const outcomesArray = Array.from(outcomes);
+
+          // Convert outcomes to JSON
+          const outcomesJson = outcomesArray.map((outcome) => outcome.toJSON());
+
+          // Count outcomes by type
+          const counts = {
+            passed: outcomesArray.filter(Outcome.isPassed).length,
+            failed: outcomesArray.filter(Outcome.isFailed).length,
+            cantTell: outcomesArray.filter(Outcome.isCantTell).length,
+            inapplicable: outcomesArray.filter(Outcome.isInapplicable).length,
+          };
+
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    summary: {
+                      total: outcomesArray.length,
+                      counts,
+                    },
+                    outcomes: outcomesJson,
                   },
-                  outcomes: outcomesJson,
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        } catch (parseError) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  error: `Failed to parse HTML: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+                }),
+              },
+            ],
+            isError: true,
+          };
+        }
       }
 
       case "audit_page": {

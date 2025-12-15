@@ -18,8 +18,10 @@
     "@siteimprove/alfa-json": "workspace:^",
     "@siteimprove/alfa-rules": "workspace:^",
     "@siteimprove/alfa-web": "workspace:^",
+    "@types/jsdom": "^27.0.0",
     "cors": "^2.8.5",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "jsdom": "^27.3.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",

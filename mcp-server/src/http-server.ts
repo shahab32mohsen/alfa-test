@@ -15,9 +15,11 @@ import rules, { Rules } from "@siteimprove/alfa-rules";
 import { Page } from "@siteimprove/alfa-web";
 import { Device } from "@siteimprove/alfa-device";
 import { Request as HttpRequest, Response as HttpResponse } from "@siteimprove/alfa-http";
-import { Document } from "@siteimprove/alfa-dom";
+import { Document, Node } from "@siteimprove/alfa-dom";
+import { Native } from "@siteimprove/alfa-dom/native";
 import { URL } from "@siteimprove/alfa-url";
 import { Sequence } from "@siteimprove/alfa-sequence";
+import { JSDOM } from "jsdom";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -166,32 +168,64 @@ app.post("/tools/:toolName", authenticate, async (req: Request, res: Response) =
           });
         }
         const pageUrl = pageUrlResult.getUnsafe();
-
-        const request = HttpRequest.of("GET", pageUrl);
-        const response = HttpResponse.empty();
         const device = Device.standard();
-        const document = Document.empty();
 
-        const page = Page.of(request, response, document, device);
+        try {
+          // Parse HTML with jsdom
+          const dom = new JSDOM(html, { url });
 
-        const outcomes = await Audit.of(page, rules).evaluate();
-        const outcomesArray = Array.from(outcomes);
-        const outcomesJson = outcomesArray.map((outcome) => outcome.toJSON());
+          // Set globalThis.document for Native.fromNode (it uses globalThis.document.createRange())
+          // This is required because Native.fromNode expects globalThis.document to exist
+          const originalDocument = globalThis.document;
+          globalThis.document = dom.window.document;
 
-        const counts = {
-          passed: outcomesArray.filter(Outcome.isPassed).length,
-          failed: outcomesArray.filter(Outcome.isFailed).length,
-          cantTell: outcomesArray.filter(Outcome.isCantTell).length,
-          inapplicable: outcomesArray.filter(Outcome.isInapplicable).length,
-        };
+          let document: Document;
+          try {
+            // Convert DOM to Alfa format
+            const documentJson = await Native.fromNode(dom.window.document);
+            
+            // Remove the logs property if present (Native.fromNode returns Node.JSON & Logs)
+            const { logs, ...documentJsonWithoutLogs } = documentJson as any;
+            
+            // Create Document from JSON
+            document = Node.from(documentJsonWithoutLogs as Document.JSON, device);
+          } finally {
+            // Restore original document (or undefined if it didn't exist)
+            if (originalDocument !== undefined) {
+              globalThis.document = originalDocument;
+            } else {
+              delete (globalThis as any).document;
+            }
+          }
 
-        result = {
-          summary: {
-            total: outcomesArray.length,
-            counts,
-          },
-          outcomes: outcomesJson,
-        };
+          const request = HttpRequest.of("GET", pageUrl);
+          const response = HttpResponse.of(pageUrl, 200);
+
+          const page = Page.of(request, response, document, device);
+
+          const outcomes = await Audit.of(page, rules).evaluate();
+          const outcomesArray = Array.from(outcomes);
+          const outcomesJson = outcomesArray.map((outcome) => outcome.toJSON());
+
+          const counts = {
+            passed: outcomesArray.filter(Outcome.isPassed).length,
+            failed: outcomesArray.filter(Outcome.isFailed).length,
+            cantTell: outcomesArray.filter(Outcome.isCantTell).length,
+            inapplicable: outcomesArray.filter(Outcome.isInapplicable).length,
+          };
+
+          result = {
+            summary: {
+              total: outcomesArray.length,
+              counts,
+            },
+            outcomes: outcomesJson,
+          };
+        } catch (parseError) {
+          return res.status(400).json({
+            error: `Failed to parse HTML: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+          });
+        }
         break;
       }
 
